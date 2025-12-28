@@ -11,7 +11,8 @@ export async function POST(request: NextRequest) {
 
     return new Promise((resolve) => {
       // Try "python3" if "python" fails on your machine
-      const pythonProcess = spawn("python", [scriptPath, searchTerm, maxResults.toString()]);
+      // Find this line in your route.ts:
+      const pythonProcess = spawn("python3", [scriptPath, searchTerm, maxResults.toString()]);
       
       let resultData = "";
       let errorData = "";
