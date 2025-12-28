@@ -15,15 +15,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: "Missing searchTerm" }, { status: 400 })
     }
 
-    const API_KEY = process.env.ZENROWS_API_KEY
+    const ZENROWS_API_KEY = process.env.ZENROWS_API_KEY
 
-    if (!API_KEY) {
-      console.error("[v0] ZENROWS_API_KEY is not set")
+    if (!ZENROWS_API_KEY) {
       return NextResponse.json(
-        {
-          success: false,
-          message: "伺服器配置錯誤：缺少 API 金鑰。請在 Vercel 的環境變數中設定 ZENROWS_API_KEY。",
-        },
+        { success: false, message: "Missing ZENROWS_API_KEY environment variable" },
         { status: 500 },
       )
     }
@@ -31,112 +27,170 @@ export async function POST(req: NextRequest) {
     const products: any[] = []
     const processedIds = new Set<string>()
     let currentPage = 1
-    const maxPages = Math.ceil(maxResults / 30) // MoMo shows ~30 products per page
+    const maxPages = Math.ceil(maxResults / 30)
 
     console.log("[v0] Will scrape up to", maxPages, "pages to get", maxResults, "products")
 
     while (products.length < maxResults && currentPage <= maxPages) {
-      const targetUrl = `https://www.momoshop.com.tw/search/searchShop.jsp?keyword=${encodeURIComponent(searchTerm)}&searchType=1&curPage=${currentPage}`
+      const searchKeyword = encodeURIComponent(searchTerm)
+      const targetUrl = `https://www.momoshop.com.tw/search/searchShop.jsp?keyword=${searchKeyword}&searchType=1&curPage=${currentPage}`
 
-      const zenRowsUrl = new URL("https://api.zenrows.com/v1/")
-      zenRowsUrl.searchParams.append("apikey", API_KEY)
-      zenRowsUrl.searchParams.append("url", targetUrl)
-      zenRowsUrl.searchParams.append("js_render", "true")
-      zenRowsUrl.searchParams.append("premium_proxy", "true")
-      zenRowsUrl.searchParams.append("proxy_country", "tw")
+      console.log(`[v0] Fetching page ${currentPage} from:`, targetUrl)
 
-      console.log(`[v0] Fetching page ${currentPage} from ZenRows...`)
+      const zenrowsUrl = new URL("https://api.zenrows.com/v1/")
+      zenrowsUrl.searchParams.set("apikey", ZENROWS_API_KEY)
+      zenrowsUrl.searchParams.set("url", targetUrl)
+      zenrowsUrl.searchParams.set("js_render", "true")
+      zenrowsUrl.searchParams.set("premium_proxy", "true")
+      zenrowsUrl.searchParams.set("proxy_country", "tw")
 
-      const response = await fetch(zenRowsUrl.toString(), {
-        method: "GET",
-        cache: "no-store",
-      })
+      try {
+        const response = await fetch(zenrowsUrl.toString())
 
-      if (!response.ok) {
-        console.error("[v0] ZenRows error:", response.status, response.statusText)
-        break // Stop pagination on error, return what we have
-      }
+        console.log(`[v0] Page ${currentPage} - Status: ${response.status}`)
 
-      const html = await response.text()
-      console.log(`[v0] Page ${currentPage} - Received HTML, length:`, html.length)
+        if (!response.ok) {
+          const errorText = await response.text()
+          console.error("[v0] ZenRows error:", response.status, errorText)
+          return NextResponse.json(
+            { success: false, message: `ZenRows API error: ${response.status}` },
+            { status: 500 },
+          )
+        }
 
-      const $ = cheerio.load(html)
-      let pageProducts = 0
+        const html = await response.text()
+        const $ = cheerio.load(html)
 
-      $(".listArea li").each((i, el) => {
-        if (products.length >= maxResults) return false
+        console.log("[v0] Debugging HTML structure:")
+        console.log("[v0] .listArea li count:", $(".listArea li").length)
+        console.log("[v0] ul.productList li count:", $("ul.productList li").length)
+        console.log("[v0] .product-item count:", $(".product-item").length)
+        console.log("[v0] [class*='product'] count:", $("[class*='product']").length)
+        console.log("[v0] .goodsUrl count:", $(".goodsUrl").length)
+        console.log("[v0] .goods_url count:", $(".goods_url").length)
 
-        const $el = $(el)
+        $("li")
+          .slice(0, 5)
+          .each((i, el) => {
+            const classes = $(el).attr("class")
+            const hasLink = $(el).find("a").length > 0
+            if (hasLink && classes) {
+              console.log(`[v0] Found li with classes: ${classes}, has ${$(el).find("a").length} links`)
+            }
+          })
 
-        // Extract product name
-        let name = $el.find(".prdName").text().trim()
-        if (!name) name = $el.find("h3").text().trim()
-        if (!name) name = $el.find(".goodsName").text().trim()
-        if (!name) return
+        let pageProducts = 0
 
-        let productId = "N/A"
-        let link = ""
+        const selectors = [
+          ".listArea li",
+          "ul.productList li",
+          "ul.productList.clearfix li",
+          ".goodsUrl",
+          "li.goodsUrl",
+          "[class*='goods']",
+          "li[class*='product']",
+        ]
 
-        $el.find("a").each((_, linkEl) => {
-          const href = $(linkEl).attr("href")
-          if (href && href.includes("i_code=")) {
-            const match = href.match(/i_code=(\d+)/)
-            if (match) {
-              productId = match[1]
-              link = href.startsWith("http")
-                ? href
-                : `https://www.momoshop.com.tw/goods/GoodsDetail.jsp?i_code=${productId}`
-              return false // Break the loop
+        for (const selector of selectors) {
+          const elements = $(selector)
+          console.log(`[v0] Trying selector "${selector}": found ${elements.length} elements`)
+
+          if (elements.length > 0) {
+            elements.each((i, el) => {
+              if (products.length >= maxResults) return false
+
+              const $el = $(el)
+
+              let name = $el.find(".prdName").text().trim()
+              if (!name) name = $el.find("h3").text().trim()
+              if (!name) name = $el.find(".goodsName").text().trim()
+              if (!name) name = $el.find("p.prdName").text().trim()
+              if (!name) name = $el.find(".name").text().trim()
+              if (!name) name = $el.find("a").attr("title") || ""
+
+              console.log(`[v0] Element ${i}: name="${name}"`)
+
+              if (!name) return
+
+              let productId = "N/A"
+              let link = ""
+
+              $el.find("a").each((_, linkEl) => {
+                const href = $(linkEl).attr("href")
+                if (href && href.includes("i_code=")) {
+                  const match = href.match(/i_code=(\d+)/)
+                  if (match) {
+                    productId = match[1]
+                    link = href.startsWith("http") ? href : `https://www.momoshop.com.tw${href}`
+                    return false
+                  }
+                }
+              })
+
+              if (productId === "N/A") {
+                console.log(`[v0] No product ID found for: ${name}`)
+                return
+              }
+              if (processedIds.has(productId)) return
+              processedIds.add(productId)
+
+              let priceText = $el.find(".price .money").text().trim()
+              if (!priceText) priceText = $el.find(".price b").text().trim()
+              if (!priceText) priceText = $el.find(".prdPrice").text().trim()
+              if (!priceText) priceText = $el.find("b.price").text().trim()
+              if (!priceText) priceText = $el.find(".selling-price").text().trim()
+
+              priceText = priceText.replace(/[^\d]/g, "")
+              const priceNumber = priceText ? Number.parseInt(priceText, 10) : 0
+
+              let brandName = "General"
+              const brandMatch = name.match(/【([^】]+)】/)
+              if (brandMatch) {
+                brandName = brandMatch[1]
+              }
+
+              const modelPattern = /([A-Za-z0-9]+-[A-Za-z0-9]+|[A-Z]{2,}[0-9]{2,}[A-Z0-9]*)/
+              const modelMatch = name.match(modelPattern)
+              const productModel = modelMatch ? modelMatch[1] : "N/A"
+
+              if (name && link && priceNumber > 0) {
+                products.push({
+                  productId,
+                  brandName,
+                  productName: name,
+                  productModel,
+                  price: priceNumber,
+                  link,
+                })
+                pageProducts++
+                console.log(`[v0] Added product: ${name} - $${priceNumber}`)
+              }
+            })
+
+            // If we found products with this selector, break out of selector loop
+            if (pageProducts > 0) {
+              console.log(`[v0] Success with selector: ${selector}`)
+              break
             }
           }
-        })
-
-        // Skip if no product ID found or duplicate
-        if (productId === "N/A") return
-        if (processedIds.has(productId)) return
-        processedIds.add(productId)
-
-        // Extract price
-        let priceText = $el.find(".price .money").text().trim()
-        if (!priceText) priceText = $el.find(".price b").text().trim()
-        if (!priceText) priceText = $el.find(".prdPrice").text().trim()
-
-        priceText = priceText.replace(/[^\d]/g, "")
-        const priceNumber = priceText ? Number.parseInt(priceText, 10) : 0
-
-        // Extract brand and model (like Python version)
-        let brandName = "General"
-        const brandMatch = name.match(/【([^】]+)】/)
-        if (brandMatch) {
-          brandName = brandMatch[1]
         }
 
-        const modelPattern = /([A-Za-z0-9]+-[A-Za-z0-9]+|[A-Z]{2,}[0-9]{2,}[A-Z0-9]*)/
-        const modelMatch = name.match(modelPattern)
-        const productModel = modelMatch ? modelMatch[1] : "N/A"
+        console.log(`[v0] Page ${currentPage} - Extracted ${pageProducts} products (Total: ${products.length})`)
 
-        if (name && link && priceNumber > 0) {
-          products.push({
-            productId,
-            brandName,
-            productName: name,
-            productModel,
-            price: priceNumber,
-            link,
-          })
-          pageProducts++
+        if (pageProducts === 0) {
+          console.log("[v0] No more products found, stopping pagination")
+          break
         }
-      })
 
-      console.log(`[v0] Page ${currentPage} - Extracted ${pageProducts} products (Total: ${products.length})`)
+        currentPage++
 
-      // If this page had no products, stop pagination
-      if (pageProducts === 0) {
-        console.log("[v0] No more products found, stopping pagination")
+        if (currentPage <= maxPages) {
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+      } catch (err: any) {
+        console.error("[v0] Error fetching page", currentPage, ":", err.message)
         break
       }
-
-      currentPage++
     }
 
     console.log("[v0] Successfully scraped", products.length, "products across", currentPage - 1, "pages")
