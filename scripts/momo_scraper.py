@@ -1,34 +1,23 @@
 import sys
 import json
-import requests  # Changed from playwright
+import requests
 import re
 from bs4 import BeautifulSoup
 
 def scrape_momo(search_term, max_results=50):
-    # Retrieve API Key from Vercel Environment or use fallback
-    import os
-    api_key = os.environ.get('ZENROWS_KEY', 'f7fe0f4e76910c69b41317d905194c15226a94f2')
-    
     products = []
-    # Using the same URL logic as your original script
     search_url = f"https://www.momoshop.com.tw/search/searchShop.jsp?keyword={search_term}&searchType=1"
     
-    # ZenRows params to bypass Momo and handle JS rendering
-    params = {
-        'apikey': api_key,
-        'url': search_url,
-        'premium_proxy': 'true',
-        'proxy_country': 'tw',
-        # Change js_render to 'false' if possible, or 'true' but with a shorter wait
-        'js_render': 'true', 
-        'antibot': 'true',
-        'wait_for': '.listArea',
-        'block_resources': 'image,media,font' # Speed up by not loading images
+    # Standard headers to mimic a browser
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'zh-TW,zh;q=0.9',
+        'Referer': 'https://www.momoshop.com.tw/'
     }
 
     try:
-        # We use requests now because it's lightweight for Vercel
-        response = requests.get('https://api.zenrows.com/v1/', params=params, timeout=30)
+        response = requests.get(search_url, headers=headers, timeout=15)
         if response.status_code != 200:
             return []
 
@@ -37,27 +26,24 @@ def scrape_momo(search_term, max_results=50):
 
         for item in product_items[:max_results]:
             try:
-                name_el = item.select_one(".prdName")
+                name_el = item.select_one(".prdName") or item.select_one("h3")
                 product_name = name_el.get_text(strip=True) if name_el else ""
                 if not product_name: continue
 
-                # Link and ID extraction (Keeping your original logic)
                 link_el = item.select_one("a")
                 href = link_el.get("href") if link_el else ""
-                if href.startswith("/"): href = f"https://www.momoshop.com.tw{href}"
                 
-                product_id = "N/A"
                 id_match = re.search(r'i_code=(\d+)', href)
                 if id_match:
                     product_id = id_match.group(1)
                     full_link = f"https://www.momoshop.com.tw/goods/GoodsDetail.jsp?i_code={product_id}"
                 else:
-                    full_link = href
+                    continue
 
                 price_el = item.select_one(".price .money, .prdPrice")
                 price_text = price_el.get_text(strip=True) if price_el else "0"
+                price_cleaned = re.sub(r'[^\d]', '', price_text)
 
-                # Brand extraction (Keeping your original logic)
                 brand_name = "General"
                 brand_match = re.search(r'【([^】]+)】', product_name)
                 if brand_match:
@@ -68,7 +54,7 @@ def scrape_momo(search_term, max_results=50):
                     "brandName": brand_name,
                     "productName": product_name,
                     "productModel": "Standard",
-                    "price": f"NT$ {price_text.replace(',', '').strip()}",
+                    "price": int(price_cleaned) if price_cleaned else 0,
                     "link": full_link
                 })
             except:
@@ -82,7 +68,6 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         sys.exit(1)
     
-    # Keeping your DATA_START/END markers so route.ts can read it
     results = scrape_momo(sys.argv[1], int(sys.argv[2]))
     print("=== DATA_START ===")
     print(json.dumps(results, ensure_ascii=False))
