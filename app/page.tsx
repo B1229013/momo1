@@ -9,6 +9,14 @@ import { Download, Search, AlertCircle, ExternalLink, Sparkles, Send, Paperclip,
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import * as XLSX from "xlsx"
 
+// Add this near your imports at the top
+export const metadata = {
+  icons: {
+    icon: [], // This tells the browser there is no icon.svg or .png to fetch
+    apple: [],
+  },
+};
+
 interface Product {
   productId: string; // Added back
   brandName: string;
@@ -209,4 +217,5 @@ export default function ScraperPage() {
       </div>
     </div>
   )
+
 }
