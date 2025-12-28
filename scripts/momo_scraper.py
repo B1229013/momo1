@@ -19,8 +19,11 @@ def scrape_momo(search_term, max_results=50):
         'url': search_url,
         'premium_proxy': 'true',
         'proxy_country': 'tw',
-        'js_render': 'true',
-        'wait_for': '.listArea'
+        # Change js_render to 'false' if possible, or 'true' but with a shorter wait
+        'js_render': 'true', 
+        'antibot': 'true',
+        'wait_for': '.listArea',
+        'block_resources': 'image,media,font' # Speed up by not loading images
     }
 
     try:
