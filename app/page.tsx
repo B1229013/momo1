@@ -7,9 +7,11 @@ import { AlertCircle, ExternalLink, Sparkles, ArrowRight, Download } from "lucid
 import * as XLSX from "xlsx"
 
 interface Product {
+  productId: string
+  brandName: string
   productName: string
+  productModel: string
   price: number
-  imageUrl?: string
   link: string
 }
 
@@ -66,7 +68,10 @@ export default function ScraperPage() {
     const worksheet = XLSX.utils.json_to_sheet(
       products.map((p, idx) => ({
         序號: idx + 1,
+        商品ID: p.productId,
+        品牌: p.brandName,
         商品名稱: p.productName,
+        型號: p.productModel,
         價格: p.price,
         連結: p.link,
       })),
@@ -79,7 +84,7 @@ export default function ScraperPage() {
 
   return (
     <div className="min-h-screen bg-[#121212] text-white p-6 md:p-12">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-5xl font-bold mb-4 tracking-tight">
@@ -144,12 +149,21 @@ export default function ScraperPage() {
         {/* Results */}
         {products.length > 0 && (
           <>
+            <div className="mb-4 text-center">
+              <p className="text-lg text-gray-400">
+                共找到 <span className="text-purple-400 font-bold text-2xl">{products.length}</span> 項商品
+              </p>
+            </div>
+
             <div className="bg-[#1e1e1e] border border-gray-800 rounded-3xl overflow-hidden shadow-2xl">
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
                     <tr className="bg-[#252525]">
+                      <th className="px-6 py-4 text-xs text-gray-500 uppercase text-left">商品ID</th>
+                      <th className="px-6 py-4 text-xs text-gray-500 uppercase text-left">品牌</th>
                       <th className="px-6 py-4 text-xs text-gray-500 uppercase text-left">商品名稱</th>
+                      <th className="px-6 py-4 text-xs text-gray-500 uppercase text-left">型號</th>
                       <th className="px-6 py-4 text-xs text-gray-500 uppercase text-purple-400 text-right">價格</th>
                       <th className="px-6 py-4 text-xs text-gray-500 uppercase text-center">操作</th>
                     </tr>
@@ -158,7 +172,10 @@ export default function ScraperPage() {
                   <tbody className="divide-y divide-gray-800">
                     {products.map((p, i) => (
                       <tr key={i} className="hover:bg-purple-500/5">
+                        <td className="px-6 py-4 text-sm text-purple-400 font-mono">{p.productId}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400">{p.brandName}</td>
                         <td className="px-6 py-4 text-sm text-gray-300">{p.productName}</td>
+                        <td className="px-6 py-4 text-sm text-gray-400 font-mono">{p.productModel}</td>
                         <td className="px-6 py-4 text-sm font-black text-right">
                           {"NT$ "}
                           {p.price.toLocaleString()}
