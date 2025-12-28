@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { spawn } from "child_process";
 import path from "path";
 
+export const maxDuration = 60;
 export async function POST(request: NextRequest) {
   try {
     const { searchTerm, maxResults = 50 } = await request.json();
